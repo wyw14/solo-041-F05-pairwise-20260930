@@ -41,7 +41,7 @@ func (p *Plant) UpdateBlanket(lineID model.LineID, level float64) (settling.Snap
 	if !ok {
 		return settling.Snapshot{}, errors.New("settling line is not found")
 	}
-	return state.UpdateBlanket(level, 2.8, p.now()), nil
+	return state.UpdateBlanket(level, settling.BlanketHighThreshold, p.now()), nil
 }
 
 func (p *Plant) ReceiveSample(ctx context.Context, sample model.Sample) error {
@@ -56,12 +56,41 @@ func (p *Plant) BeginSettling(lineID model.LineID) (settling.Cycle, error) {
 	if !ok {
 		return settling.Cycle{}, errors.New("settling line is not found")
 	}
+	cycle, err := p.cycles.Start(lineID, p.now())
+	if err != nil {
+		return settling.Cycle{}, err
+	}
+	// A fresh cycle must not inherit the previous cycle's phase evidence:
+	// reset the per-cycle sample count and stability anchor.
 	state.BeginCycle(p.now())
-	return p.cycles.Start(lineID, p.now())
+	return cycle, nil
 }
 
-func (p *Plant) AdvanceSettling(lineID model.LineID) (settling.Cycle, error) {
-	return p.cycles.Advance(lineID, p.now())
+type SettlingAdvance struct {
+	Cycle   settling.Cycle `json:"cycle"`
+	Blocked bool           `json:"blocked"`
+	Reasons []string       `json:"reasons,omitempty"`
+}
+
+func (p *Plant) AdvanceSettling(lineID model.LineID) (SettlingAdvance, error) {
+	cycle, ok := p.cycles.Current(lineID)
+	if !ok {
+		return SettlingAdvance{}, errors.New("settling cycle is not active")
+	}
+	if cycle.Phase == settling.PhaseSettle {
+		state, ok := p.settling[lineID]
+		if !ok {
+			return SettlingAdvance{}, errors.New("settling line is not found")
+		}
+		if reasons := settling.DecantDelays(state.Snapshot(), len(p.alarms.Active(lineID)), p.now()); len(reasons) > 0 {
+			return SettlingAdvance{Cycle: cycle, Blocked: true, Reasons: reasons}, nil
+		}
+	}
+	advanced, err := p.cycles.Advance(lineID, p.now())
+	if err != nil {
+		return SettlingAdvance{}, err
+	}
+	return SettlingAdvance{Cycle: advanced}, nil
 }
 
 func (p *Plant) Alarms() []model.Alarm {

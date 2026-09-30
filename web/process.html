@@ -7,6 +7,7 @@
   <div class="page-head"><div><h1>处理线运行</h1><div class="muted">进水接纳、批次阶段和出水状态</div></div><div class="status"><span class="dot"></span><span id="health">checking</span></div></div>
   <div class="grid">
     <section class="panel wide"><h2>处理线</h2><table><thead><tr><th>处理线</th><th>阶段</th><th>代际</th><th>批次</th></tr></thead><tbody id="lines"></tbody></table></section>
+    <section class="panel wide"><h2>沉淀周期</h2><table><thead><tr><th>处理线</th><th>周期阶段</th><th>本周期采样</th><th>最近界面测量</th><th>测量时间</th><th>排水延迟原因</th></tr></thead><tbody id="settling"></tbody></table></section>
     <section class="panel"><h2>接纳进水</h2><form id="start"><label>处理线<select name="line"><option>line-1</option><option>line-2</option><option>line-3</option></select></label><label>流量 m³/h<input name="flow" type="number" value="760" min="1"></label><label>来源<input name="source" value="north-intake"></label><button>创建处理批次</button></form></section>
     <section class="panel wide"><h2>最近操作</h2><pre id="output">等待操作</pre></section>
     <section class="panel"><h2>急停隔离</h2><form id="stop"><label>处理线<select name="line"><option>line-1</option><option>line-2</option><option>line-3</option></select></label><label>原因<input name="reason" value="operator safety check"></label><button class="danger">隔离处理线</button></form></section>
@@ -14,6 +15,8 @@
 </main>
 <script src="/assets/common.js"></script><script>
 async function loadLines(){const data=await request('/api/process-lines');document.querySelector('#lines').innerHTML=data.lines.map(x=>`<tr><td>${x.line_id}</td><td>${x.stage}</td><td>${x.generation}</td><td>${x.batch_id||'-'}</td></tr>`).join('')}
-document.querySelector('#start').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);try{show(await request(`/api/process-lines/${f.get('line')}/batches`,{method:'POST',body:JSON.stringify({flow_m3_hour:Number(f.get('flow')),source:f.get('source')})}));loadLines()}catch(err){showError(err)}});
-document.querySelector('#stop').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);try{show(await request(`/api/emergency/${f.get('line')}`,{method:'POST',body:JSON.stringify({reason:f.get('reason')})}));loadLines()}catch(err){showError(err)}});loadLines().catch(showError);
+async function loadSettling(){const d=await request('/api/settling');document.querySelector('#settling').innerHTML=d.lines.map(x=>{const s=x.settling,c=x.cycle;const level=s.measured_at?`${s.blanket_level.toFixed(2)} m${s.high?'（超高）':''}`:'-';const at=s.measured_at?new Date(s.measured_at).toLocaleString():'-';const delays=(x.decant_delays||[]).join('；');return `<tr><td>${x.line_id}</td><td>${c?c.phase:'-'}</td><td>${s.cycle_samples}</td><td>${level}</td><td>${at}</td><td>${delays||'-'}</td></tr>`}).join('')}
+function refresh(){loadLines().catch(showError);loadSettling().catch(showError)}
+document.querySelector('#start').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);try{show(await request(`/api/process-lines/${f.get('line')}/batches`,{method:'POST',body:JSON.stringify({flow_m3_hour:Number(f.get('flow')),source:f.get('source')})}));refresh()}catch(err){showError(err)}});
+document.querySelector('#stop').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);try{show(await request(`/api/emergency/${f.get('line')}`,{method:'POST',body:JSON.stringify({reason:f.get('reason')})}));refresh()}catch(err){showError(err)}});refresh();
 </script></body></html>

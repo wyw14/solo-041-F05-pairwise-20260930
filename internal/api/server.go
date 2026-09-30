@@ -62,6 +62,7 @@ func (s *Server) routes() http.Handler {
 		api.Post("/maintenance/compensations", s.runCompensations)
 		api.Post("/settling/{lineID}/cycles", s.beginSettling)
 		api.Post("/settling/{lineID}/cycles/advance", s.advanceSettling)
+		api.Get("/settling", s.settlingStatus)
 		api.Get("/alarms", s.alarmList)
 		api.Post("/alarms/{alarmID}/ack", s.acknowledgeAlarm)
 		api.Post("/alarms/{alarmID}/recover", s.recoverAlarm)

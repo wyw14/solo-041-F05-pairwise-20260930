@@ -2,6 +2,7 @@ package process
 
 import (
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -101,6 +102,41 @@ func filterPumps(values []sludge.Pump, lineID model.LineID) []sludge.Pump {
 		if value.LineID == lineID {
 			result = append(result, value)
 		}
+	}
+	return result
+}
+
+type SettlingLineStatus struct {
+	LineID       model.LineID      `json:"line_id"`
+	Cycle        *settling.Cycle   `json:"cycle,omitempty"`
+	Settling     settling.Snapshot `json:"settling"`
+	DecantDelays []string          `json:"decant_delays,omitempty"`
+}
+
+func (p *Plant) SettlingStatus() []SettlingLineStatus {
+	p.mu.RLock()
+	lineIDs := make([]model.LineID, 0, len(p.lines))
+	for lineID := range p.lines {
+		lineIDs = append(lineIDs, lineID)
+	}
+	p.mu.RUnlock()
+	sort.Slice(lineIDs, func(i, j int) bool { return lineIDs[i] < lineIDs[j] })
+	result := make([]SettlingLineStatus, 0, len(lineIDs))
+	for _, lineID := range lineIDs {
+		state, ok := p.settling[lineID]
+		if !ok {
+			continue
+		}
+		snapshot := state.Snapshot()
+		entry := SettlingLineStatus{LineID: lineID, Settling: snapshot}
+		if cycle, found := p.cycles.Current(lineID); found {
+			current := cycle
+			entry.Cycle = &current
+			if current.Phase == settling.PhaseSettle {
+				entry.DecantDelays = settling.DecantDelays(snapshot, len(p.alarms.Active(lineID)), p.now())
+			}
+		}
+		result = append(result, entry)
 	}
 	return result
 }
