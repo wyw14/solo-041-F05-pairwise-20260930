@@ -1,14 +1,22 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/wyw14/cry-97/internal/model"
+	"github.com/wyw14/cry-97/internal/settling"
 )
 
 type blanketRequest struct {
 	Level float64 `json:"level"`
+}
+
+type holdResponse struct {
+	Error       string   `json:"error"`
+	Phase       string   `json:"phase"`
+	HoldReasons []string `json:"hold_reasons"`
 }
 
 func (s *Server) updateBlanket(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +60,15 @@ func (s *Server) advanceSettling(w http.ResponseWriter, r *http.Request) {
 	}
 	cycle, err := s.plant.AdvanceSettling(lineID)
 	if err != nil {
+		var hold *settling.HoldError
+		if errors.As(err, &hold) {
+			writeJSON(w, http.StatusConflict, holdResponse{
+				Error:       hold.Error(),
+				Phase:       string(settling.PhaseSettle),
+				HoldReasons: hold.HoldReasons(),
+			})
+			return
+		}
 		writeError(w, http.StatusConflict, err)
 		return
 	}
